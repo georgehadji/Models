@@ -87,6 +87,16 @@ export function normalizeModel(raw) {
     webSearch: unitPrice(pricing.web_search),
     discount: toNumber(pricing.discount),
   };
+  // Long-prompt tiers: from min_prompt_tokens up, the whole request uses these prices.
+  price.tiers = (Array.isArray(pricing.overrides) ? pricing.overrides : [])
+    .map((o) => ({
+      minPromptTokens: toNumber(o.min_prompt_tokens),
+      input: perMillion(o.prompt),
+      output: perMillion(o.completion),
+      reasoning: perMillion(o.internal_reasoning),
+    }))
+    .filter((t) => t.minPromptTokens != null)
+    .sort((a, b) => a.minPromptTokens - b.minPromptTokens);
   const dynamicPricing = ['prompt', 'completion'].some((k) => (toNumber(pricing[k]) ?? 0) < 0);
   const isFree =
     String(raw.id).endsWith(':free') ||

@@ -175,7 +175,10 @@ export function nearestLevel(levels, wanted) {
  * assumptions: { input, output, reasoningTokens: { [level]: tokens } }
  */
 export function costPer1k(m, effort, assumptions) {
-  const { input: inP, output: outP, reasoning } = m.price;
+  const tier = (m.price.tiers || []).filter((t) => assumptions.input >= t.minPromptTokens).at(-1);
+  const inP = tier?.input ?? m.price.input;
+  const outP = tier?.output ?? m.price.output;
+  const reasoning = tier?.reasoning ?? m.price.reasoning;
   if (inP == null || outP == null) return null;
   const reasoningP = reasoning > 0 ? reasoning : outP;
   const reasoningTokens = effort === 'none' ? 0 : assumptions.reasoningTokens[effort] ?? 0;

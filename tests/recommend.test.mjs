@@ -68,6 +68,16 @@ test('costPer1k adds reasoning tokens at the output price, or the separate reaso
   assert.equal(R.costPer1k(sep, 'high', A), 30.5);
 });
 
+test('costPer1k switches to the long-prompt price tier once a prompt reaches min_prompt_tokens', () => {
+  const r = raw({ id: 'a/tiered', inP: 0.1, outP: 0.5 });
+  r.pricing.overrides = [{ min_prompt_tokens: 100000, prompt: '0.0000005', completion: '0.0000025' }];
+  const m = D.normalizeModel(r);
+  // 2k-token prompts: base price. 1k × (2000 × 0.1 + 500 × 0.5) / 1e6 = 0.45
+  assert.equal(R.costPer1k(m, 'none', A), 0.45);
+  // 100k-token prompts: the whole request is billed at the tier. 1k × (100000 × 0.5 + 500 × 2.5) / 1e6 = 51.25
+  assert.equal(R.costPer1k(m, 'none', { ...A, input: 100000 }), 51.25);
+});
+
 test('candidates exclude variants, free models, unmet requirements and unscored models, and count each', () => {
   const models = [
     model({ id: 'a/ok', coding: 70 }),
