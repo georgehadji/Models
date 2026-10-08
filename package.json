@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.mjs",
     "snapshot": "node scripts/snapshot.mjs",
-    "test": "node --test tests/data.test.mjs",
+    "test": "node --test tests/data.test.mjs tests/recommend.test.mjs",
     "test:e2e": "node tests/e2e.mjs"
   },
   "engines": {

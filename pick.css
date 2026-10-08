@@ -1,0 +1,421 @@
+/* "Pick for a project" section. Uses the tokens defined in styles.css. */
+
+.step {
+  margin: 0 0 10px;
+}
+
+.hint {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 0;
+}
+
+/* presets */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+
+.preset {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  cursor: pointer;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+}
+
+.preset:hover {
+  background: var(--wash);
+}
+
+.preset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.preset[aria-checked='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.preset b {
+  display: block;
+  font-size: 13px;
+}
+
+.preset small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.preset.link small::after {
+  content: ' ↓';
+}
+
+/* layout */
+.pick-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+  gap: 16px;
+  margin: 16px 0;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .pick-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pick-controls h3.step:not(:first-child) {
+  margin-top: 18px;
+}
+
+.pick-controls fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.pick-controls .chips {
+  margin-bottom: 12px;
+}
+
+.pick-controls .chips label {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.field {
+  display: block;
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.field select,
+.field input {
+  width: 100%;
+}
+
+.pick-controls input[type='number'] {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-height: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 64px 1fr 30px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.slider input {
+  accent-color: var(--accent);
+  min-width: 0;
+}
+
+.slider output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.effort-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  gap: 6px;
+}
+
+.effort-grid label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.effort-grid input {
+  width: 100%;
+}
+
+/* tier cards */
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 12px;
+}
+
+.tier {
+  border-top: 3px solid var(--tier);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kicker {
+  color: var(--tier);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tier-name {
+  font-size: 16px;
+  font-weight: 650;
+  margin: 0;
+}
+
+.model-id {
+  color: var(--text-muted);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.why {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+.why li {
+  padding: 2px 0 2px 16px;
+  position: relative;
+}
+
+.why li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: var(--series-3);
+}
+
+.why li.warn::before {
+  content: '!';
+  color: var(--critical);
+  font-weight: 700;
+}
+
+.pills-caption {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pill {
+  min-width: 52px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.pill b {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pill.default {
+  border-color: var(--tier);
+  box-shadow: inset 0 0 0 1px var(--tier);
+}
+
+.fallback {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 12.5px;
+}
+
+.fallback .label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fallback .name {
+  font-weight: 600;
+}
+
+.fallback .meta {
+  color: var(--text-secondary);
+}
+
+.snippet {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.snippet code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 4px 6px;
+  background: var(--wash);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.snippet button {
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+}
+
+.callout {
+  margin-top: 12px;
+}
+
+/* tables in the pick section */
+.pick-card .table-wrap {
+  margin-top: 12px;
+  max-height: none;
+}
+
+.pick-charts {
+  margin: 16px 0;
+}
+
+.tag {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: var(--text-muted);
+}
+
+.role {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+td.cost-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-left: 2px solid var(--surface);
+}
+
+td.cost-cell.default {
+  outline: 2px solid var(--text-primary);
+  outline-offset: -2px;
+  font-weight: 700;
+}
+
+td.na {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+td .yes {
+  color: var(--series-3);
+  font-weight: 700;
+}
+
+td .no {
+  color: var(--text-muted);
+}
+
+td select {
+  min-height: 26px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+td .note {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.compare {
+  flex: 0 0 auto;
+  width: 180px;
+}
+
+/* charts added for this section */
+.frontier {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.dot.muted {
+  fill-opacity: 0.35;
+}
+
+.point-label.strong {
+  font-weight: 600;
+}
+
+.series-line {
+  fill: none;
+  stroke-width: 2;
+}
+
+.series-line.dashed {
+  stroke-dasharray: 5 4;
+  stroke-width: 1.5;
+}
+
+.line-dot {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.line-ring {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+@media (max-width: 600px) {
+  .compare {
+    width: 100%;
+  }
+  .card-head:has(.compare) {
+    flex-wrap: wrap;
+  }
+}

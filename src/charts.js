@@ -1,4 +1,4 @@
-// Small SVG chart kit: horizontal bars, columns, scatter and heatmap.
+// Small SVG chart kit: horizontal bars, scatter, lines over categories and heatmap.
 // Marks follow one spec everywhere: thin bars with a 4px rounded data-end,
 // hairline solid grid, 2px surface ring on dots, and a hover/focus tooltip on
 // every mark. All label text is inserted with textContent (API data is untrusted).
@@ -160,12 +160,6 @@ function hBarPath(x0, y, w, h, r = 4) {
   return `M${x0},${y}H${x1 - r}Q${x1},${y} ${x1},${y + r}V${y + h - r}Q${x1},${y + h} ${x1 - r},${y + h}H${x0}Z`;
 }
 
-function vBarPath(x, base, w, h, r = 4) {
-  r = Math.min(r, h, w / 2);
-  const top = base - h;
-  return `M${x},${base}V${top + r}Q${x},${top} ${x + r},${top}H${x + w - r}Q${x + w},${top} ${x + w},${top + r}V${base}Z`;
-}
-
 function rootSvg(host, width, height, label) {
   host.replaceChildren();
   const svg = svgEl('svg', {
@@ -256,60 +250,12 @@ export function barChart(host, spec) {
   });
 }
 
-// ---------- column chart (ordered bins / time) ----------
-
-/**
- * spec: { rows: [{ label, value, tip? }], color, format, capLabels: 'all'|'max'|'none', label, xTitle }
- */
-export function columnChart(host, spec) {
-  const { rows, format } = spec;
-  if (!rows.length || rows.every((r) => !r.value)) return emptyState(host, spec.empty || 'No data for the current filters.');
-  const width = Math.max(300, host.clientWidth);
-  const height = 250;
-  const m = { top: 20, right: 8, bottom: 30, left: 40 };
-  const max = Math.max(...rows.map((r) => r.value));
-  const ticks = linearTicks(0, max, 4, spec.integer);
-  const y = scale([0, ticks.at(-1)], [height - m.bottom, m.top]);
-  const plotW = width - m.left - m.right;
-  const band = plotW / rows.length;
-  const barW = Math.min(24, band * 0.7);
-  const svg = rootSvg(host, width, height, spec.label);
-
-  for (const t of ticks) {
-    svgEl('line', { x1: m.left, x2: width - m.right, y1: y(t), y2: y(t), class: t === 0 ? 'baseline' : 'gridline' }, svg);
-    text(svg, m.left - 6, y(t) + 4, spec.tickFormat ? spec.tickFormat(t) : format(t), { class: 'tick', 'text-anchor': 'end' });
-  }
-
-  const maxLabelW = Math.max(...rows.map((r) => textWidth(r.label, '11px system-ui')));
-  const every = Math.max(1, Math.ceil((maxLabelW + 8) / band));
-  const maxIdx = rows.reduce((best, r, i) => (r.value > rows[best].value ? i : best), 0);
-
-  rows.forEach((row, i) => {
-    const cx = m.left + band * i + band / 2;
-    const g = svgEl('g', { class: 'row', tabindex: 0, 'aria-label': `${row.label}: ${format(row.value)}` }, svg);
-    svgEl('rect', { x: m.left + band * i, y: m.top, width: band, height: height - m.top - m.bottom, class: 'hit' }, g);
-    const h = y(0) - y(row.value);
-    if (h > 0.5) {
-      const path = svgEl('path', { d: vBarPath(cx - barW / 2, y(0), barW, h), class: 'mark' }, g);
-      path.style.fill = spec.color;
-    }
-    const showCap = spec.capLabels === 'all' || (spec.capLabels === 'max' && i === maxIdx);
-    if (showCap && row.value) text(g, cx, y(row.value) - 6, format(row.value), { class: 'value', 'text-anchor': 'middle' });
-    if (i % every === 0) text(svg, cx, height - m.bottom + 16, row.label, { class: 'tick', 'text-anchor': 'middle' });
-    bindTip(
-      g,
-      () => row.tip || { title: row.label, rows: [{ value: format(row.value), label: spec.valueLabel || '', color: spec.color }] },
-      (on) => g.classList.toggle('active', on),
-    );
-  });
-}
-
 // ---------- scatter ----------
 
 /**
  * spec: {
  *   points: [{ id, x, y, group, label, tip }], groups: [{ name, color }],
- *   xLog, yLog, xTitle, yTitle, xFormat, yFormat, labelIds: Set, label
+ *   xLog, yLog, xFromMin, xTitle, yTitle, xFormat, yFormat, labelIds: Set, labelAll, frontierIds, label
  * }
  */
 export function scatterChart(host, spec) {
@@ -322,7 +268,8 @@ export function scatterChart(host, spec) {
   const m = { top: 14, right: 16, bottom: 44, left: 56 };
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
-  const xTicks = spec.xLog ? logTicks(Math.min(...xs), Math.max(...xs)) : linearTicks(Math.min(0, ...xs), Math.max(...xs));
+  const xMin = spec.xFromMin ? Math.min(...xs) : Math.min(0, ...xs);
+  const xTicks = spec.xLog ? logTicks(Math.min(...xs), Math.max(...xs)) : linearTicks(xMin, Math.max(...xs));
   const yTicks = spec.yLog ? logTicks(Math.min(...ys), Math.max(...ys)) : linearTicks(spec.yZero ? 0 : Math.min(...ys), Math.max(...ys));
   const x = scale([xTicks[0], xTicks.at(-1)], [m.left, width - m.right], spec.xLog);
   const y = scale([yTicks[0], yTicks.at(-1)], [height - m.bottom, m.top], spec.yLog);
@@ -345,23 +292,61 @@ export function scatterChart(host, spec) {
     transform: `rotate(-90 12 ${m.top + (height - m.top - m.bottom) / 2})`,
   });
 
-  const dots = svgEl('g', {}, svg);
   const placed = pts.map((p) => ({ p, cx: x(p.x), cy: y(p.y) }));
-  for (const d of placed) {
-    const c = svgEl('circle', { cx: d.cx, cy: d.cy, r: 4, class: 'dot' }, dots);
-    c.style.fill = spec.groups[d.p.group].color;
+  const colorOf = (p) => p.color || spec.groups[p.group].color;
+
+  // Optional frontier: a dashed line through the given ids, in the order given.
+  if (spec.frontierIds?.length) {
+    const byId = new Map(placed.map((d) => [d.p.id, d]));
+    const line = spec.frontierIds.map((id) => byId.get(id)).filter(Boolean);
+    if (line.length > 1) svgEl('polyline', { points: line.map((d) => `${d.cx},${d.cy}`).join(' '), class: 'frontier' }, svg);
   }
 
-  // Selective direct labels; skip any that would collide with one already placed.
-  const boxes = [];
-  for (const d of placed.filter((d) => spec.labelIds?.has(d.p.id))) {
+  // Muted points first so highlighted ones sit on top.
+  const dots = svgEl('g', {}, svg);
+  for (const d of [...placed].sort((a, b) => (a.p.r || 4) - (b.p.r || 4))) {
+    const c = svgEl('circle', { cx: d.cx, cy: d.cy, r: d.p.r || 4, class: `dot${d.p.muted ? ' muted' : ''}` }, dots);
+    c.style.fill = colorOf(d.p);
+  }
+
+  // Direct labels. By default a colliding label is skipped; with labelAll each
+  // label tries a few positions and is only skipped if every one collides.
+  const labelled = placed.filter((d) => spec.labelIds?.has(d.p.id)).sort((a, b) => (b.p.r || 4) - (a.p.r || 4));
+  // Labelled dots are obstacles too, so a label never covers another named point.
+  const boxes = labelled.map((d) => {
+    const r = (d.p.r || 4) + 1;
+    return { x0: d.cx - r, x1: d.cx + r, y0: d.cy - r, y1: d.cy + r };
+  });
+  const hits = (box) => boxes.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0);
+  for (const d of labelled) {
     const w = textWidth(d.p.label, '11px system-ui');
-    const right = d.cx + 7 + w < width - m.right;
-    const bx = right ? d.cx + 7 : d.cx - 7 - w;
-    const box = { x0: bx - 2, x1: bx + w + 2, y0: d.cy - 10, y1: d.cy + 4 };
-    if (boxes.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) continue;
-    boxes.push(box);
-    text(svg, bx, d.cy + 1, d.p.label, { class: 'point-label' });
+    const gap = (d.p.r || 4) + 3;
+    const spots = [
+      [d.cx + gap, d.cy + 4],
+      [d.cx - gap - w, d.cy + 4],
+      ...(spec.labelAll
+        ? [
+            [d.cx - w / 2, d.cy - gap - 2],
+            [d.cx - w / 2, d.cy + gap + 10],
+            [d.cx + gap, d.cy + 16],
+            [d.cx - gap - w, d.cy - 8],
+            [d.cx + gap, d.cy - 10],
+            [d.cx - gap - w, d.cy + 18],
+            [d.cx - w / 2, d.cy - gap - 16],
+            [d.cx - w / 2, d.cy + gap + 24],
+          ]
+        : []),
+    ];
+    // Centred spots slide sideways to stay inside the plot rather than being dropped.
+    const clampX = (bx) => Math.min(Math.max(bx, m.left + 2), width - w - 2);
+    const fits = ([bx, by]) => bx >= m.left && bx + w <= width - 2 && by - 11 >= 0 && by <= height - m.bottom + 4;
+    const fitting = spots.map(([bx, by], i) => [i < 2 ? bx : clampX(bx), by]).filter(fits);
+    // A `strong` point (e.g. a recommended model) is always named, even if every spot collides.
+    const spot = fitting.find(([bx, by]) => !hits({ x0: bx - 2, x1: bx + w + 2, y0: by - 11, y1: by + 3 })) || (d.p.strong ? fitting[0] : null);
+    if (!spot) continue;
+    boxes.push({ x0: spot[0] - 2, x1: spot[0] + w + 2, y0: spot[1] - 11, y1: spot[1] + 3 });
+    const label = text(svg, spot[0], spot[1], d.p.label, { class: `point-label${d.p.strong ? ' strong' : ''}` });
+    if (d.p.strong) label.style.fill = colorOf(d.p);
   }
 
   // Nearest-point hover layer: the pointer only has to be closest, within 24px.
@@ -416,6 +401,71 @@ export function scatterChart(host, spec) {
   });
 }
 
+// ---------- line chart over ordered categories ----------
+
+/**
+ * spec: {
+ *   categories: [string],               // x positions, in order
+ *   series: [{ name, color, dashed, points: [{ x: category, y, ring?, tip }] }],
+ *   yLog, yFormat, yTitle, label
+ * }
+ * Each series is labelled at its last point; ring marks a highlighted point.
+ */
+export function lineChart(host, spec) {
+  const series = spec.series.filter((s) => s.points.some((p) => p.y > 0));
+  if (!series.length) return emptyState(host, spec.empty || 'No data for the current selection.');
+  const width = Math.max(300, host.clientWidth);
+  const height = 300;
+  const labelW = Math.min(170, Math.max(...series.map((s) => textWidth(s.name, '11px system-ui'))) + 14);
+  const m = { top: 14, right: labelW, bottom: 34, left: 56 };
+  const ys = series.flatMap((s) => s.points.map((p) => p.y)).filter((v) => v > 0);
+  const ticks = spec.yLog ? logTicks(Math.min(...ys), Math.max(...ys)) : linearTicks(0, Math.max(...ys));
+  const y = scale([ticks[0], ticks.at(-1)], [height - m.bottom, m.top], spec.yLog);
+  const step = (width - m.left - m.right) / Math.max(1, spec.categories.length - 1);
+  const x = (c) => m.left + spec.categories.indexOf(c) * step;
+  const svg = rootSvg(host, width, height, spec.label);
+
+  ticks.forEach((t, i) => {
+    svgEl('line', { x1: m.left, x2: width - m.right, y1: y(t), y2: y(t), class: i === 0 ? 'baseline' : 'gridline' }, svg);
+    text(svg, m.left - 6, y(t) + 4, spec.yFormat(t), { class: 'tick', 'text-anchor': 'end' });
+  });
+  for (const c of spec.categories) text(svg, x(c), height - m.bottom + 16, c, { class: 'tick', 'text-anchor': 'middle' });
+  if (spec.yTitle) {
+    const cy = m.top + (height - m.top - m.bottom) / 2;
+    text(svg, 12, cy, spec.yTitle, { class: 'axis-title', 'text-anchor': 'middle', transform: `rotate(-90 12 ${cy})` });
+  }
+
+  // End labels, nudged apart vertically so they never overlap.
+  const ends = series
+    .map((s) => {
+      const last = s.points.filter((p) => p.y > 0).at(-1);
+      return { s, x: x(last.x), y: y(last.y) };
+    })
+    .sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + 13);
+
+  for (const s of series) {
+    const pts = s.points.filter((p) => p.y > 0);
+    const line = svgEl('polyline', { points: pts.map((p) => `${x(p.x)},${y(p.y)}`).join(' '), class: `series-line${s.dashed ? ' dashed' : ''}` }, svg);
+    line.style.stroke = s.color;
+    for (const p of pts) {
+      const g = svgEl('g', { class: 'row', tabindex: 0, 'aria-label': `${s.name}, ${p.x}: ${spec.yFormat(p.y)}` }, svg);
+      svgEl('circle', { cx: x(p.x), cy: y(p.y), r: 9, class: 'hit' }, g);
+      const dot = svgEl('circle', { cx: x(p.x), cy: y(p.y), r: s.dashed ? 3 : 3.5, class: 'line-dot' }, g);
+      dot.style.fill = s.color;
+      if (p.ring) {
+        const ring = svgEl('circle', { cx: x(p.x), cy: y(p.y), r: 7, class: 'line-ring' }, g);
+        ring.style.stroke = s.color;
+      }
+      bindTip(g, () => p.tip, (on) => g.classList.toggle('active', on));
+    }
+  }
+  for (const e of ends) {
+    const t = text(svg, width - m.right + 8, e.y + 4, truncate(e.s.name, labelW - 12), { class: 'point-label strong' });
+    t.style.fill = e.s.color;
+  }
+}
+
 // ---------- heatmap ----------
 
 const RAMP = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'];
@@ -431,11 +481,6 @@ export function rampColor(t, dark) {
   const a = hexToRgb(steps[i]);
   const b = hexToRgb(steps[i + 1]);
   return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(',')})`;
-}
-
-export function rampGradient(dark) {
-  const steps = dark ? [...RAMP].reverse() : RAMP;
-  return `linear-gradient(90deg, ${steps.join(', ')})`;
 }
 
 /**

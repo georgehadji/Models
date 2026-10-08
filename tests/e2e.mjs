@@ -1,17 +1,21 @@
 // End-to-end smoke test in headless Chromium against the synthetic fixture.
 // Covers the three data paths (direct API, local proxy, nothing reachable),
-// rendering of every card, hover tooltips, table toggles, filters, dark mode
-// and the no-horizontal-scroll rule at phone width.
+// the "Pick for a project" section (tiers, fallbacks, effort table, effort
+// compare control), rendering of every card, hover tooltips, table toggles,
+// filters, dark mode and the no-horizontal-scroll rule at phone width.
 // Usage: npm run test:e2e  (requires the `playwright` package and a Chromium build)
 
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { makeCatalog } from './fixtures.mjs';
+import * as D from '../src/data.js';
+import * as R from '../src/recommend.js';
 
-const OUT = new URL('../test-results/', import.meta.url).pathname;
+const OUT = fileURLToPath(new URL('../test-results/', import.meta.url));
 const catalog = makeCatalog();
 const bodyFor = (path) =>
   path.startsWith('/videos/models') ? catalog.videos : path.startsWith('/images/models') ? catalog.images : catalog.models;
@@ -27,7 +31,7 @@ function fakeUpstream() {
 
 function startApp(upstream) {
   const child = spawn(process.execPath, ['server.mjs', '--port', '0'], {
-    cwd: new URL('..', import.meta.url).pathname,
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
     env: { ...process.env, OPENROUTER_BASE: upstream },
   });
   return new Promise((resolve, reject) => {
@@ -61,6 +65,15 @@ const deadApp = await startApp('http://127.0.0.1:9');
 await mkdir(OUT, { recursive: true });
 const total = catalog.models.data.length;
 
+// Picks the app should show for the default preset, computed with the same pure modules.
+function expectedTiers() {
+  const p = R.PRESETS[0];
+  const models = catalog.models.data.map(D.normalizeModel);
+  const a = { input: p.task.input, output: p.task.output, reasoningTokens: R.DEFAULT_REASONING_TOKENS };
+  const { list } = R.candidates(models, { ...p }, a);
+  return R.rankTiers(R.score(list, p.weights)).filter((t) => t.pick);
+}
+
 try {
   // 1. Direct API path: full render.
   {
@@ -68,12 +81,32 @@ try {
     await page.waitForSelector('#card-releases svg');
     assert.match(await page.textContent('#status'), new RegExp(`${total} models · OpenRouter API`));
 
-    const cards = await page.$$eval('.card', (els) =>
+    // Section cards only: the pick section's cards hold tables and tier cards, not .chart svgs.
+    const cards = await page.$$eval('.grid[data-section] .card', (els) =>
       els.map((el) => ({ id: el.id, svg: !!el.querySelector('.chart svg'), empty: el.querySelector('.chart .empty')?.textContent || null })),
     );
-    assert.ok(cards.length >= 20, `expected 20+ cards, got ${cards.length}`);
+    assert.equal(cards.length, 19, `expected 19 section cards, got ${cards.length}`);
     const blank = cards.filter((c) => !c.svg);
     assert.deepEqual(blank, [], `cards without a chart: ${JSON.stringify(blank)}`);
+
+    // Pick section: one card per tier with a pick, each naming a fallback, plus the effort table.
+    const tiers = expectedTiers();
+    assert.equal(await page.locator('#pick-tiers .tier').count(), tiers.length);
+    for (const [i, t] of tiers.entries()) {
+      const card = page.locator('#pick-tiers .tier').nth(i);
+      assert.equal(await card.locator('.tier-name').textContent(), t.pick.m.name);
+      if (t.fallback) assert.equal(await card.locator('.fallback .name').textContent(), t.fallback.m.name);
+    }
+    if (tiers.length) {
+      assert.ok((await page.locator('#pick-effort-table td.cost-cell.default').count()) >= tiers.length);
+      assert.ok(await page.isVisible('#pick-curves svg'));
+      assert.ok(await page.isVisible('#pick-scatter svg'));
+      // Compare control: all at "low" puts every row's effort select on low or its nearest level.
+      await page.selectOption('#pick-compare', 'low');
+      const efforts = await page.$$eval('#pick-caps tbody select', (s) => s.map((x) => x.value));
+      assert.ok(efforts.length > 0 && efforts.every((e) => ['none', 'minimal', 'low', 'medium'].includes(e)), efforts.join(','));
+      await page.selectOption('#pick-compare', 'default');
+    }
 
     // Hover a bar row → tooltip with the model's prices.
     await page.hover('#card-price-low .row');
@@ -87,15 +120,16 @@ try {
     assert.ok(await page.isVisible('.tooltip.visible'));
 
     // Table toggle.
-    await page.click('#card-cap-coverage .card-head button');
-    assert.ok(await page.isVisible('#card-cap-coverage table'));
-    assert.ok(!(await page.isVisible('#card-cap-coverage .chart')));
+    await page.click('#card-cap-models .card-head button');
+    assert.ok(await page.isVisible('#card-cap-models table'));
+    assert.ok(!(await page.isVisible('#card-cap-models .chart')));
 
-    // Filters scope the KPIs.
-    const before = await page.textContent('#kpis .kpi-value');
+    // Filters scope the explorer (and every card).
+    const rowsSel = '#explorer-table tbody tr';
+    const before = await page.locator(rowsSel).count();
     await page.check('input[name="cap"][value="reasoning"]');
-    await page.waitForFunction((b) => document.querySelector('#kpis .kpi-value').textContent !== b, before);
-    const reasoningOnly = Number(await page.textContent('#kpis .kpi-value'));
+    await page.waitForFunction(([sel, b]) => document.querySelectorAll(sel).length !== b, [rowsSel, before]);
+    const reasoningOnly = await page.locator(rowsSel).count();
     const expected = catalog.models.data.filter(
       (m) => m.reasoning || (m.supported_parameters || []).includes('reasoning'),
     ).length;

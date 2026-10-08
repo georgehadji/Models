@@ -6,6 +6,7 @@
     <title>OpenRouter Model Atlas</title>
     <meta name="description" content="Live charts of OpenRouter LLM, image and video models: pricing, context, capabilities, reasoning and benchmarks." />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="pick.css" />
     <script type="module" src="src/app.js"></script>
   </head>
   <body>
@@ -57,7 +58,7 @@
     </form>
 
     <nav class="sections" aria-label="Sections">
-      <a href="#overview">Overview</a>
+      <a href="#pick">Pick for a project</a>
       <a href="#pricing">Pricing</a>
       <a href="#capabilities">Capabilities</a>
       <a href="#context">Context</a>
@@ -71,14 +72,113 @@
 
     <main id="main">
       <div id="error" class="notice" hidden></div>
-      <section id="overview"><h2>Overview</h2><div id="kpis" class="kpis"></div></section>
+      <section id="pick">
+        <h2>Pick for a project</h2>
+        <p class="section-note">Ranks models for a type of project. Uses the filter bar above as well as the requirements below. Costs are estimates per 1,000 tasks. The API publishes one benchmark score per model and does not say at which effort it was measured.</p>
+
+        <h3 class="step">1 · What is the project?</h3>
+        <div id="pick-presets" class="presets" role="radiogroup" aria-label="Project type"></div>
+
+        <div class="pick-layout">
+          <form id="pick-form" class="card pick-controls" aria-label="Requirements, weights and cost assumptions" onsubmit="return false">
+            <h3 class="step">2 · Requirements</h3>
+            <fieldset class="chips" aria-label="Must support">
+              <legend class="field-label">Must support</legend>
+              <label><input type="checkbox" name="pick-req" value="tools" /> Tools</label>
+              <label><input type="checkbox" name="pick-req" value="structured" /> Structured outputs</label>
+              <label><input type="checkbox" name="pick-req" value="vision" /> Image input</label>
+              <label><input type="checkbox" name="pick-req" value="file" /> File input</label>
+              <label><input type="checkbox" name="pick-req" value="audioIn" /> Audio input</label>
+              <label><input type="checkbox" name="pick-req" value="videoIn" /> Video input</label>
+            </fieldset>
+            <div class="field-row">
+              <label class="field"><span class="field-label">Minimum context</span>
+                <select id="pick-ctx">
+                  <option value="0">Any</option>
+                  <option value="32000">32K</option>
+                  <option value="64000">64K</option>
+                  <option value="128000">128K</option>
+                  <option value="200000">200K</option>
+                  <option value="500000">500K</option>
+                  <option value="1000000">1M</option>
+                </select>
+              </label>
+              <label class="field"><span class="field-label">Max blended $ / 1M</span>
+                <select id="pick-max">
+                  <option value="1">$1</option>
+                  <option value="3">$3</option>
+                  <option value="5">$5</option>
+                  <option value="10">$10</option>
+                  <option value="15">$15</option>
+                  <option value="30">$30</option>
+                  <option value="">No limit</option>
+                </select>
+              </label>
+            </div>
+
+            <h3 class="step">Weights</h3>
+            <label class="slider"><span>Quality</span><input id="w-quality" type="range" min="0" max="100" step="5" /><output for="w-quality"></output></label>
+            <label class="slider"><span>Cost</span><input id="w-cost" type="range" min="0" max="100" step="5" /><output for="w-cost"></output></label>
+            <label class="slider"><span>Context</span><input id="w-context" type="range" min="0" max="100" step="5" /><output for="w-context"></output></label>
+            <p id="pick-quality-note" class="hint"></p>
+
+            <h3 class="step">Cost assumptions</h3>
+            <div class="field-row">
+              <label class="field"><span class="field-label">Input tokens / task</span><input id="task-in" type="number" min="0" step="100" /></label>
+              <label class="field"><span class="field-label">Output tokens / task</span><input id="task-out" type="number" min="0" step="100" /></label>
+            </div>
+            <fieldset class="effort-tokens">
+              <legend class="field-label">Reasoning tokens added per task, by effort</legend>
+              <div id="pick-effort-tokens" class="effort-grid"></div>
+            </fieldset>
+            <p class="hint">OpenRouter lists which efforts a model accepts and its default, but not how many tokens each effort spends. These are your estimates.</p>
+            <button id="pick-reset" type="button" class="ghost">Reset to preset</button>
+          </form>
+
+          <div class="pick-results">
+            <h3 class="step">3 · Recommended models</h3>
+            <p id="pick-summary" class="hint" aria-live="polite"></p>
+            <div id="pick-tiers" class="tiers"></div>
+            <div id="pick-callout" class="notice callout" hidden></div>
+          </div>
+        </div>
+
+        <article class="card wide pick-card">
+          <h3>Cost by reasoning effort</h3>
+          <p class="card-sub">Estimated $ per 1,000 tasks for each shortlisted model at each effort it accepts. Outlined = the model's default. · = effort not offered.</p>
+          <div id="pick-effort-table" class="table-wrap"></div>
+        </article>
+
+        <div class="grid pick-charts">
+          <article class="card">
+            <h3>Effort curves of the picks and fallbacks</h3>
+            <p class="card-sub">$ per 1,000 tasks as each model reasons harder (log scale). Solid = pick, dashed = its fallback, ringed = default effort.</p>
+            <div id="pick-curves" class="chart"></div>
+          </article>
+          <article class="card">
+            <h3 id="pick-scatter-title">Quality vs cost at default effort</h3>
+            <p class="card-sub">Every candidate model. The dashed line joins models no other model beats on both quality and cost. Shortlisted models are named.</p>
+            <div id="pick-scatter" class="chart"></div>
+          </article>
+        </div>
+
+        <article class="card wide pick-card">
+          <div class="card-head">
+            <div>
+              <h3>Capabilities of the shortlist</h3>
+              <p class="card-sub">Compare at the same effort or at different efforts per model. The API publishes one benchmark score per model and does not say at which effort it was measured; only cost varies here.</p>
+            </div>
+            <label class="field compare"><span class="field-label">Compare at</span><select id="pick-compare"></select></label>
+          </div>
+          <div id="pick-caps" class="table-wrap"></div>
+        </article>
+      </section>
       <section id="pricing"><h2>Pricing</h2><div class="grid" data-section="pricing"></div></section>
       <section id="capabilities"><h2>Capabilities &amp; modalities</h2><div class="grid" data-section="capabilities"></div></section>
       <section id="context"><h2>Context window</h2><div class="grid" data-section="context"></div></section>
       <section id="reasoning">
         <h2>Reasoning</h2>
         <p class="section-note">Reasoning support is read from each model's <code>reasoning</code> object and <code>supported_parameters</code> (<code>reasoning</code>, <code>include_reasoning</code>, <code>reasoning_effort</code>).</p>
-        <div id="reasoning-kpis" class="kpis"></div>
         <div class="grid" data-section="reasoning"></div>
       </section>
       <section id="benchmarks">
@@ -86,7 +186,7 @@
         <p class="section-note">Artificial Analysis indices as published in the OpenRouter Models API. Models without scores are omitted.</p>
         <div class="grid" data-section="benchmarks"></div>
       </section>
-      <section id="timeline"><h2>Release timeline</h2><div class="grid" data-section="timeline"></div></section>
+      <section id="timeline"><h2>Timeline</h2><div class="grid" data-section="timeline"></div></section>
       <section id="images"><h2>Image generation</h2><div class="grid" data-section="images"></div></section>
       <section id="videos"><h2>Video generation</h2><div class="grid" data-section="videos"></div></section>
       <section id="explorer">

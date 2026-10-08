@@ -372,29 +372,6 @@ section {
   border-radius: 50%;
 }
 
-.scale {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.scale-bar {
-  width: 140px;
-  height: 10px;
-  border-radius: 3px;
-}
-
-.scale .cell-empty-key {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  background: var(--grid);
-  margin-left: 8px;
-}
-
 .chart {
   margin-top: 12px;
   overflow-x: auto;
@@ -546,38 +523,6 @@ section {
   flex-shrink: 0;
 }
 
-/* stat tiles */
-.kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.kpi {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-}
-
-.kpi-label {
-  color: var(--text-secondary);
-  font-size: 12.5px;
-}
-
-.kpi-value {
-  font-size: 24px;
-  font-weight: 600;
-  margin-top: 2px;
-}
-
-.kpi-note {
-  color: var(--text-muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
 /* tables */
 .table-wrap {
   overflow: auto;
@@ -651,8 +596,5 @@ td .sub {
 @media (max-width: 600px) {
   .filters {
     position: static;
-  }
-  .kpi-value {
-    font-size: 20px;
   }
 }
