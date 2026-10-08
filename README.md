@@ -61,6 +61,13 @@ named) appear on the tier cards and in the shortlist table once you enter an Ope
 returns them to authenticated requests. They are fetched per shortlisted model from `/models/{id}/endpoints`.
 OpenRouter routes requests by price by default, so a given request may not hit the fastest provider.
 
+**Speed as a ranking factor**: the *Speed* weight (off by default) adds estimated seconds per task to the
+Best value score: latency + (output tokens + reasoning tokens at the default effort) / throughput, lower is
+better on a log scale. It needs an API key and fetches `/endpoints` for every candidate (4 at a time, cached
+per key until Refresh). Models without measurements count as average speed, and the summary says how many were
+measured. Best quality and Lowest cost ignore speed. The shortlist table shows the estimated time per task at
+the compared effort.
+
 ## What's charted
 
 Every card below shows named models: rankings, scatters with model tooltips and model × feature grids.

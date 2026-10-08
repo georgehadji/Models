@@ -24,7 +24,7 @@ export const speedOf = (id) => cache.get(id) || null;
 
 function scheduleNotify() {
   clearTimeout(notifyTimer);
-  notifyTimer = setTimeout(() => notify(), 100);
+  notifyTimer = setTimeout(() => notify(), 250);
 }
 
 function pump(apiKey) {
