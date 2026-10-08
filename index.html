@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenRouter Model Atlas</title>
+    <meta name="description" content="Live charts of OpenRouter LLM, image and video models: pricing, context, capabilities, reasoning and benchmarks." />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <h1>OpenRouter Model Atlas</h1>
+        <p id="status" class="status" aria-live="polite">Loading models…</p>
+      </div>
+      <div class="actions">
+        <button id="refresh" type="button">Refresh</button>
+        <label class="button">
+          Import JSON
+          <input id="import" type="file" accept="application/json,.json" hidden />
+        </label>
+        <button id="export" type="button" disabled>Save snapshot</button>
+        <button id="theme" type="button" aria-label="Toggle dark mode">Theme</button>
+        <details class="api-key">
+          <summary>API key</summary>
+          <div class="api-key-panel">
+            <p>Optional. Only needed if an endpoint requires auth. Kept in this tab's session storage and sent only to OpenRouter (or your local proxy).</p>
+            <input id="api-key" type="password" autocomplete="off" placeholder="sk-or-…" />
+          </div>
+        </details>
+      </div>
+    </header>
+
+    <form id="filters" class="filters" aria-label="Filters" onsubmit="return false">
+      <input id="f-query" type="search" placeholder="Search models…" aria-label="Search models" />
+      <select id="f-author" aria-label="Provider"><option value="">All providers</option></select>
+      <select id="f-input" aria-label="Input modality"><option value="">Any input</option></select>
+      <select id="f-output" aria-label="Output modality"><option value="">Any output</option></select>
+      <select id="f-pricing" aria-label="Pricing">
+        <option value="">Free + paid</option>
+        <option value="paid">Paid only</option>
+        <option value="free">Free only</option>
+      </select>
+      <fieldset class="chips" aria-label="Required capabilities">
+        <label><input type="checkbox" name="cap" value="reasoning" /> Reasoning</label>
+        <label><input type="checkbox" name="cap" value="tools" /> Tools</label>
+        <label><input type="checkbox" name="cap" value="vision" /> Image input</label>
+        <label><input type="checkbox" name="cap" value="structured" /> Structured</label>
+      </fieldset>
+      <select id="f-top" aria-label="Rows per ranking">
+        <option value="10">Top 10</option>
+        <option value="15" selected>Top 15</option>
+        <option value="25">Top 25</option>
+      </select>
+      <button id="f-reset" type="button" class="ghost">Reset</button>
+    </form>
+
+    <nav class="sections" aria-label="Sections">
+      <a href="#overview">Overview</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#context">Context</a>
+      <a href="#reasoning">Reasoning</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#timeline">Timeline</a>
+      <a href="#images">Image generation</a>
+      <a href="#videos">Video generation</a>
+      <a href="#explorer">Explorer</a>
+    </nav>
+
+    <main id="main">
+      <div id="error" class="notice" hidden></div>
+      <section id="overview"><h2>Overview</h2><div id="kpis" class="kpis"></div></section>
+      <section id="pricing"><h2>Pricing</h2><div class="grid" data-section="pricing"></div></section>
+      <section id="capabilities"><h2>Capabilities &amp; modalities</h2><div class="grid" data-section="capabilities"></div></section>
+      <section id="context"><h2>Context window</h2><div class="grid" data-section="context"></div></section>
+      <section id="reasoning">
+        <h2>Reasoning</h2>
+        <p class="section-note">Reasoning support is read from each model's <code>reasoning</code> object and <code>supported_parameters</code> (<code>reasoning</code>, <code>include_reasoning</code>, <code>reasoning_effort</code>).</p>
+        <div id="reasoning-kpis" class="kpis"></div>
+        <div class="grid" data-section="reasoning"></div>
+      </section>
+      <section id="benchmarks">
+        <h2>Benchmarks</h2>
+        <p class="section-note">Artificial Analysis indices as published in the OpenRouter Models API. Models without scores are omitted.</p>
+        <div class="grid" data-section="benchmarks"></div>
+      </section>
+      <section id="timeline"><h2>Release timeline</h2><div class="grid" data-section="timeline"></div></section>
+      <section id="images"><h2>Image generation</h2><div class="grid" data-section="images"></div></section>
+      <section id="videos"><h2>Video generation</h2><div class="grid" data-section="videos"></div></section>
+      <section id="explorer">
+        <div class="section-head">
+          <h2>Explorer</h2>
+          <button id="csv" type="button">Download CSV</button>
+        </div>
+        <div id="explorer-table" class="table-wrap"></div>
+      </section>
+    </main>
+    <footer class="footer">
+      Data: <a href="https://openrouter.ai/docs/guides/overview/models" rel="noopener">OpenRouter Models API</a>.
+      Prices are USD per 1M tokens unless stated; "blended" = (3 × input + output) / 4.
+    </footer>
+  </body>
+</html>
