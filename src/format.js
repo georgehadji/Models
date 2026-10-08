@@ -25,10 +25,6 @@ export function usd(n) {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: digits })}`;
 }
 
-export function pct(share) {
-  return share == null ? '—' : `${Math.round(share * 100)}%`;
-}
-
 export function int(n) {
   return n == null ? '—' : n.toLocaleString('en-US');
 }

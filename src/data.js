@@ -1,5 +1,5 @@
-// Pure data layer: normalizes OpenRouter API payloads and computes the
-// aggregates the charts draw. No DOM access, so it runs in Node tests too.
+// Pure data layer: normalizes OpenRouter API payloads and provides the
+// filtering and ranking helpers the charts use. No DOM access, so it runs in Node tests too.
 //
 // Field names follow the OpenRouter Models API wire format (snake_case), as
 // defined by the official @openrouter/sdk schemas.
@@ -65,9 +65,6 @@ export const CAPABILITIES = [
   { key: 'seed', label: 'Seed', test: (m) => m.params.has('seed') },
 ];
 
-// Highest effort first, matching the API's own ordering of supported_efforts.
-export const EFFORT_LEVELS = ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none'];
-
 export function normalizeModel(raw) {
   const pricing = raw.pricing || {};
   const arch = raw.architecture || {};
@@ -90,6 +87,16 @@ export function normalizeModel(raw) {
     webSearch: unitPrice(pricing.web_search),
     discount: toNumber(pricing.discount),
   };
+  // Long-prompt tiers: from min_prompt_tokens up, the whole request uses these prices.
+  price.tiers = (Array.isArray(pricing.overrides) ? pricing.overrides : [])
+    .map((o) => ({
+      minPromptTokens: toNumber(o.min_prompt_tokens),
+      input: perMillion(o.prompt),
+      output: perMillion(o.completion),
+      reasoning: perMillion(o.internal_reasoning),
+    }))
+    .filter((t) => t.minPromptTokens != null)
+    .sort((a, b) => a.minPromptTokens - b.minPromptTokens);
   const dynamicPricing = ['prompt', 'completion'].some((k) => (toNumber(pricing[k]) ?? 0) < 0);
   const isFree =
     String(raw.id).endsWith(':free') ||
@@ -100,6 +107,8 @@ export function normalizeModel(raw) {
     supported:
       !!r || params.has('reasoning') || params.has('include_reasoning') || params.has('reasoning_effort'),
     mandatory: !!r?.mandatory,
+    // null = the API doesn't say; false = reasoning is off unless the request turns it on.
+    defaultEnabled: typeof r?.default_enabled === 'boolean' ? r.default_enabled : null,
     efforts: Array.isArray(r?.supported_efforts) ? r.supported_efforts.filter(Boolean) : null,
     defaultEffort: r?.default_effort ?? null,
     supportsMaxTokens: !!r?.supports_max_tokens,
@@ -112,6 +121,12 @@ export function normalizeModel(raw) {
     coding: toNumber(aa?.coding_index),
     agentic: toNumber(aa?.agentic_index),
     arenaBestElo: arena.length ? Math.max(...arena.map((e) => e.elo)) : null,
+    // Design Arena Elo per category (e.g. website, uicomponent); highest if a category repeats.
+    arena: arena.reduce((acc, e) => {
+      const elo = toNumber(e.elo);
+      if (e.category && elo != null) acc[e.category] = Math.max(acc[e.category] ?? -Infinity, elo);
+      return acc;
+    }, {}),
   };
 
   const model = {
@@ -138,6 +153,42 @@ export function normalizeModel(raw) {
   };
   model.caps = Object.fromEntries(CAPABILITIES.map((c) => [c.key, !!c.test(model)]));
   return model;
+}
+
+/** A 30-minute stat is either a number or percentiles ({ p50, p75, … }); keep the median. */
+const p50 = (v) => toNumber(typeof v === 'object' && v !== null ? v.p50 : v);
+
+const medianOf = (values) => {
+  const v = values.filter((x) => x != null).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+};
+
+/**
+ * Per-provider speed from GET /models/{id}/endpoints. OpenRouter only fills
+ * latency_last_30m (ms) and throughput_last_30m (tokens/s) for authenticated
+ * requests. Returns the median across providers and the fastest provider.
+ */
+export function normalizeEndpoints(json) {
+  const endpoints = Array.isArray(json?.data?.endpoints) ? json.data.endpoints : [];
+  const providers = endpoints.map((e) => ({
+    name: e.provider_name || e.tag || 'unknown',
+    tag: e.tag || null,
+    latency: p50(e.latency_last_30m),
+    throughput: p50(e.throughput_last_30m),
+    uptime: toNumber(e.uptime_last_1d),
+  }));
+  const timed = providers.filter((p) => p.latency != null);
+  const fed = providers.filter((p) => p.throughput != null);
+  return {
+    providers,
+    latency: medianOf(timed.map((p) => p.latency)),
+    throughput: medianOf(fed.map((p) => p.throughput)),
+    fastestLatency: timed.length ? timed.reduce((a, b) => (b.latency < a.latency ? b : a)) : null,
+    fastestThroughput: fed.length ? fed.reduce((a, b) => (b.throughput > a.throughput ? b : a)) : null,
+    measuredProviders: new Set([...timed, ...fed]).size,
+  };
 }
 
 export function normalizeVideoModel(raw) {
@@ -191,26 +242,6 @@ export function filterModels(models, f = {}) {
   });
 }
 
-export function median(values) {
-  const v = values.filter((x) => x != null).sort((a, b) => a - b);
-  if (!v.length) return null;
-  const mid = v.length >> 1;
-  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
-}
-
-export function summary(models) {
-  const paid = models.filter((m) => !m.isFree && m.price.input != null);
-  return {
-    total: models.length,
-    authors: new Set(models.map((m) => m.author)).size,
-    free: models.filter((m) => m.isFree).length,
-    reasoning: models.filter((m) => m.reasoning.supported).length,
-    medianInput: median(paid.map((m) => m.price.input)),
-    medianOutput: median(paid.map((m) => m.price.output)),
-    maxContext: models.reduce((best, m) => (m.contextLength > (best?.contextLength ?? 0) ? m : best), null),
-  };
-}
-
 /** Top `n` models by a numeric accessor, skipping null values. */
 export function topBy(models, accessor, n, direction = 'desc') {
   const sign = direction === 'asc' ? 1 : -1;
@@ -229,107 +260,9 @@ export function countBy(items, keyOf) {
   return [...counts.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
 }
 
-export const PRICE_BINS = [
-  { label: 'Free', test: (v) => v === 0 },
-  { label: '< $0.10', max: 0.1 },
-  { label: '$0.10–0.50', max: 0.5 },
-  { label: '$0.50–1', max: 1 },
-  { label: '$1–3', max: 3 },
-  { label: '$3–10', max: 10 },
-  { label: '$10–30', max: 30 },
-  { label: '≥ $30', max: Infinity },
-];
-
-/** Histogram of a $/M price into fixed, ordered bins. */
-export function priceHistogram(models, accessor = (m) => m.price.input) {
-  const counts = PRICE_BINS.map((b) => ({ label: b.label, count: 0 }));
-  for (const m of models) {
-    const v = accessor(m);
-    if (v == null) continue;
-    const idx = v === 0 ? 0 : PRICE_BINS.findIndex((b, i) => i > 0 && v < b.max);
-    counts[idx].count++;
-  }
-  return counts;
-}
-
-export const CONTEXT_BINS = [
-  { label: '≤ 8K', max: 8192 },
-  { label: '≤ 32K', max: 32768 },
-  { label: '≤ 128K', max: 131072 },
-  { label: '≤ 256K', max: 262144 },
-  { label: '≤ 1M', max: 1048576 },
-  { label: '> 1M', max: Infinity },
-];
-
-export function contextHistogram(models) {
-  const counts = CONTEXT_BINS.map((b) => ({ label: b.label, count: 0 }));
-  for (const m of models) {
-    if (m.contextLength == null) continue;
-    counts[CONTEXT_BINS.findIndex((b) => m.contextLength <= b.max)].count++;
-  }
-  return counts;
-}
-
-export function capabilityCoverage(models) {
-  return CAPABILITIES.map((c) => {
-    const count = models.filter((m) => m.caps[c.key]).length;
-    return { key: c.key, label: c.label, count, share: models.length ? count / models.length : 0 };
-  });
-}
-
-/** Authors (rows, by model count) × capabilities (cols); cell = share of that author's models. */
-export function authorCapabilityMatrix(models, topAuthors = 12) {
-  const authors = countBy(models, (m) => m.author).slice(0, topAuthors);
-  return {
-    rows: authors.map((a) => ({ key: a.key, total: a.count })),
-    cols: CAPABILITIES,
-    cells: authors.map((a) => {
-      const own = models.filter((m) => m.author === a.key);
-      return CAPABILITIES.map((c) => {
-        const count = own.filter((m) => m.caps[c.key]).length;
-        return { count, total: own.length, share: count / own.length };
-      });
-    }),
-  };
-}
-
 export function modalityCounts(models, which) {
   const field = which === 'input' ? 'inputModalities' : 'outputModalities';
   return countBy(models, (m) => m[field]);
-}
-
-/** Models released per calendar month (UTC), oldest first, over the last `months`. */
-export function releasesByMonth(models, months = 24, now = new Date()) {
-  const buckets = [];
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    buckets.push({ key: d.toISOString().slice(0, 7), date: d, count: 0 });
-  }
-  const index = new Map(buckets.map((b, i) => [b.key, i]));
-  for (const m of models) {
-    if (!m.created) continue;
-    const i = index.get(m.created.toISOString().slice(0, 7));
-    if (i != null) buckets[i].count++;
-  }
-  return buckets;
-}
-
-export function reasoningStats(models) {
-  const rm = models.filter((m) => m.reasoning.supported);
-  const effortCounts = EFFORT_LEVELS.map((level) => ({
-    level,
-    count: rm.filter((m) => m.reasoning.efforts?.includes(level)).length,
-  }));
-  return {
-    total: rm.length,
-    mandatory: rm.filter((m) => m.reasoning.mandatory).length,
-    optional: rm.filter((m) => !m.reasoning.mandatory).length,
-    maxTokens: rm.filter((m) => m.reasoning.supportsMaxTokens).length,
-    unrestrictedEfforts: rm.filter((m) => m.reasoning.efforts == null).length,
-    separateReasoningPrice: rm.filter((m) => m.price.reasoning != null && m.price.reasoning > 0).length,
-    effortCounts,
-    byAuthor: countBy(rm, (m) => m.author),
-  };
 }
 
 const csvCell = (v) => {

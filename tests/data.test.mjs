@@ -106,52 +106,25 @@ test('topBy skips nulls and respects direction', () => {
   assert.deepEqual(D.topBy(ms, (m) => m.v, 5, 'desc').map((m) => m.name), ['a', 'd', 'c']);
 });
 
-test('histograms put every priced model in exactly one bin', () => {
-  const models = makeCatalog().models.data.map(D.normalizeModel);
-  const priced = models.filter((m) => m.price.input != null).length;
-  assert.equal(D.priceHistogram(models).reduce((s, b) => s + b.count, 0), priced);
-  const hist = D.priceHistogram([{ price: { input: 0 } }, { price: { input: 0.1 } }, { price: { input: 99 } }]);
-  assert.equal(hist[0].count, 1); // Free
-  assert.equal(hist.find((b) => b.label === '$0.10–0.50').count, 1); // lower bound inclusive
-  assert.equal(hist.at(-1).count, 1);
-  const ctx = D.contextHistogram([{ contextLength: 8192 }, { contextLength: 8193 }, { contextLength: 2e6 }]);
-  assert.deepEqual(ctx.map((b) => b.count), [1, 1, 0, 0, 0, 1]);
-});
-
-test('releasesByMonth buckets by UTC month and ignores older models', () => {
-  const now = new Date(Date.UTC(2026, 9, 15));
-  const at = (y, mo) => ({ created: new Date(Date.UTC(y, mo, 2)) });
-  const b = D.releasesByMonth([at(2026, 9), at(2026, 9), at(2026, 8), at(2020, 0), { created: null }], 3, now);
-  assert.deepEqual(b.map((x) => [x.key, x.count]), [['2026-08', 0], ['2026-09', 1], ['2026-10', 2]]);
-});
-
-test('reasoningStats counts effort allowlists and unrestricted models', () => {
-  const models = [
-    raw({ id: 'a/1', reasoning: { mandatory: true, supported_efforts: ['high', 'low'] } }),
-    raw({ id: 'a/2', reasoning: { mandatory: false, supported_efforts: null, supports_max_tokens: true } }),
-    raw({ id: 'a/3' }),
-  ].map(D.normalizeModel);
-  const s = D.reasoningStats(models);
-  assert.equal(s.total, 2);
-  assert.equal(s.mandatory, 1);
-  assert.equal(s.optional, 1);
-  assert.equal(s.maxTokens, 1);
-  assert.equal(s.unrestrictedEfforts, 1);
-  assert.equal(s.effortCounts.find((e) => e.level === 'high').count, 1);
-  assert.equal(s.effortCounts.find((e) => e.level === 'medium').count, 0);
-});
-
-test('authorCapabilityMatrix shares are per author', () => {
-  const models = [
-    raw({ id: 'x/1', supported_parameters: ['tools'] }),
-    raw({ id: 'x/2' }),
-    raw({ id: 'y/1', supported_parameters: ['tools'] }),
-  ].map(D.normalizeModel);
-  const mx = D.authorCapabilityMatrix(models);
-  const toolsCol = mx.cols.findIndex((c) => c.key === 'tools');
-  assert.deepEqual(mx.rows.map((r) => r.key), ['x', 'y']);
-  assert.equal(mx.cells[0][toolsCol].share, 0.5);
-  assert.equal(mx.cells[1][toolsCol].share, 1);
+test('endpoints: median p50 latency and throughput across providers, fastest named, nulls ignored', () => {
+  const s = D.normalizeEndpoints({
+    data: {
+      endpoints: [
+        { provider_name: 'A', latency_last_30m: { p50: 1500, p90: 4000 }, throughput_last_30m: { p50: 40 } },
+        { provider_name: 'B', latency_last_30m: { p50: 1200 }, throughput_last_30m: 90 },
+        { provider_name: 'C', latency_last_30m: { p50: 3000 }, throughput_last_30m: null },
+        { provider_name: 'D', latency_last_30m: null, throughput_last_30m: null },
+      ],
+    },
+  });
+  assert.equal(s.latency, 1500);
+  assert.equal(s.throughput, 65);
+  assert.equal(s.fastestLatency.name, 'B');
+  assert.equal(s.fastestThroughput.name, 'B');
+  assert.equal(s.measuredProviders, 3);
+  const empty = D.normalizeEndpoints({ data: { endpoints: [{ provider_name: 'X', latency_last_30m: null }] } });
+  assert.deepEqual([empty.latency, empty.throughput, empty.fastestLatency, empty.measuredProviders], [null, null, null, 0]);
+  assert.equal(D.normalizeEndpoints({ data: [] }).providers.length, 0);
 });
 
 test('video models: SKUs parsed and sorted, max duration computed', () => {

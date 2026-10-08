@@ -53,6 +53,21 @@ export function parseSnapshot(json) {
   throw new Error('Unrecognized JSON: expected an OpenRouter /models response or a snapshot file');
 }
 
+// Model ids are "author/slug" with an optional ":variant"; anything else is refused before a request is built.
+const MODEL_ID = /^[A-Za-z0-9._~-]+\/[A-Za-z0-9._~:-]+$/;
+
+/** Per-provider endpoints for one model (latency/throughput need an API key). Direct API first, then the proxy. */
+export async function fetchEndpoints(id, { apiKey, signal } = {}) {
+  if (!MODEL_ID.test(id)) throw new Error(`Unexpected model id: ${id}`);
+  const path = `/models/${id}/endpoints`;
+  try {
+    return await getJSON(OPENROUTER_API + path, apiKey, signal);
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    return getJSON(PROXY_API + path, apiKey, signal);
+  }
+}
+
 export async function loadCatalog({ apiKey, signal } = {}) {
   const attempts = [];
   for (const [source, base] of [

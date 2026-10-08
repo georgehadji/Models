@@ -25,25 +25,73 @@ Other ways to get data in:
 
 The app tries sources in order: OpenRouter API directly → local proxy (`/api/openrouter/*`) → `data/snapshot.json`.
 
+## Pick for a project
+
+The first section recommends models for a type of project. Every chart in it names specific models.
+
+1. **Presets**: Coding agent, Agentic workflow, Chat assistant, Long-document RAG, Bulk extraction,
+   Website / UI and Vision. Each sets a quality metric (Coding, Agentic or Intelligence index, or the
+   Design Arena Elo for website and UI-component work), hard requirements, weights and a typical task
+   size. Image and video generation jump to their own sections, because those catalogs have no quality
+   benchmark.
+2. **Requirements and weights**: required capabilities, minimum context, maximum blended price,
+   quality / cost / context weights, tokens per task and estimated reasoning tokens per effort level.
+   Settings are remembered in this browser. The filter bar applies too.
+3. **Three picks, each with a fallback**:
+   - *Best quality*: the highest score on the preset's metric.
+   - *Lowest cost*: the cheapest per task among models at or above the median score.
+   - *Best value*: the highest weighted score among models that cost at least as much as the lowest-cost
+     pick.
+
+   Each fallback is the next model in the same ranking from a different provider, preferring one close
+   in quality. A copyable `"models": [pick, fallback]` field is ready for OpenRouter's model fallbacks.
+4. **Cost by reasoning effort**: a table of estimated $ per 1,000 tasks for each shortlisted model at
+   every effort it accepts, with its default outlined.
+5. **Effort curves** for the picks and fallbacks, and a **quality vs cost** scatter of every candidate
+   with the Pareto frontier.
+6. **Capabilities of the shortlist**, compared at each model's default effort, at one effort for all
+   models (nearest supported level when a model lacks it), or at a different effort per model.
+
+Cost per task = input tokens × input price + output tokens × output price + reasoning tokens ×
+reasoning price (the output price when no separate reasoning price is listed). Long-prompt price tiers
+(`pricing.overrides`, e.g. Claude Haiku 5.5 above 100K prompt tokens) apply once the task's prompt reaches them.
+
+**Latency and throughput** (median p50 across providers over the last 30 minutes, with the fastest provider
+named) appear on the tier cards and in the shortlist table once you enter an OpenRouter API key: OpenRouter only
+returns them to authenticated requests. They are fetched per shortlisted model from `/models/{id}/endpoints`.
+OpenRouter routes requests by price by default, so a given request may not hit the fastest provider.
+
 ## What's charted
+
+Every card below shows named models: rankings, scatters with model tooltips and model × feature grids.
 
 | Section | Charts |
 |---|---|
-| Overview | Stat tiles: model and provider counts, free and reasoning-capable models, median input/output price, largest context, image/video model counts |
-| Pricing | Cheapest and most expensive models (input vs output $/1M), input and output price distributions, price vs context scatter (log–log, reasoning vs non-reasoning) |
-| Capabilities | Capability coverage, models per provider, provider × capability heatmap, input and output modalities |
-| Context | Largest context windows with max output tokens, context-length distribution |
-| Reasoning | Reasoning stat tiles (always-on, optional, `reasoning.max_tokens`, separately priced reasoning tokens), supported effort levels, reasoning models per provider |
+| Pricing | Cheapest and most expensive models (input vs output $/1M), cheapest per task at default effort, input vs output price scatter, price vs context scatter (log–log, reasoning vs non-reasoning) |
+| Capabilities | Model × capability and modality grid (top models by Intelligence index) |
+| Context | Largest context windows with max output tokens, cheapest models with a 1M+ context |
+| Reasoning | Model × effort-level grid with each default marked, cost per task at lowest / default / highest effort |
 | Benchmarks | Artificial Analysis Intelligence / Coding / Agentic indices, intelligence vs price scatter |
-| Timeline | Models added per month (last 24 months) |
+| Timeline | Release date vs Intelligence index, one dot per model |
 | Image generation | Price per generated image, token prices of image-output models, Image API parameters matrix |
 | Video generation | Max duration, lowest listed pricing SKU, resolution and feature matrix |
 | Explorer | Sortable table of every model with CSV export |
 
-One filter row scopes every chart, tile and table: search, provider, input modality, output modality,
+One filter row scopes every chart and table: search, provider, input modality, output modality,
 free/paid, required capabilities (reasoning, tools, image input, structured outputs) and ranking size.
-Each chart has a **Table** toggle that shows the same data as a table, and supports hover and keyboard tooltips.
+Each chart card has a **Table** toggle that shows the same data as a table, and supports hover and keyboard tooltips.
 Light and dark themes follow the OS setting or the **Theme** button.
+
+### Data limits
+
+- The API publishes one benchmark score per model and does not say at which reasoning effort it was measured.
+- It lists which efforts a model accepts and its default, but not how many tokens each effort spends,
+  so reasoning tokens per effort are editable estimates. Reasoning models without an effort list are
+  assumed to accept low / medium / high. Optional reasoning counts as off unless the API says it is on
+  by default.
+- Picks leave out `:batch`, `:free` and other variants (Bulk extraction allows `:batch`), free models,
+  models without text output and models without a score on the preset's metric. The section reports
+  how many were left out for each reason.
 
 ## Data sources and field mapping
 
@@ -83,19 +131,24 @@ How fields become chart values (`src/data.js`):
 ## Development
 
 ```sh
-npm test             # unit tests for the data layer (node:test)
+npm test             # unit tests for the data layer and recommendations (node:test)
 npm install          # only needed for the e2e test (installs Playwright)
-npm run test:e2e     # headless Chromium: all data paths, every card, tooltips, filters, dark mode, phone width
+npm run test:e2e     # headless Chromium: all data paths, pick section, every card, tooltips, filters, dark mode, phone width
 ```
 
 Set `PLAYWRIGHT_CHROMIUM_PATH` to use an existing Chromium binary. Screenshots are written to `test-results/`.
 
 ```
 index.html, styles.css   page shell and design tokens (light/dark)
+pick.css                 styles for the Pick for a project section
 src/api.js               fetching with source fallback, snapshot parsing
-src/data.js              pure normalization and aggregation (unit-tested)
-src/charts.js            small SVG chart kit: bars, columns, scatter, heatmap, tooltip
-src/app.js               filters, cards, tables, exports
+src/data.js              pure normalization, filtering and ranking helpers (unit-tested)
+src/recommend.js         pure presets, cost per task by effort, tiers, fallbacks, frontier (unit-tested)
+src/pick-controls.js     pick section form state (saved in localStorage)
+src/pick.js              pick section rendering
+src/cards.js             card definitions for the sections below the pick section
+src/charts.js            small SVG chart kit: bars, scatter, lines, heatmap, tooltip
+src/app.js               filters, card rendering, tables, exports
 server.mjs               static server + allowlisted OpenRouter proxy
 scripts/snapshot.mjs     writes data/snapshot.json
 ```

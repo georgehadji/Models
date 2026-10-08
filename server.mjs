@@ -12,6 +12,8 @@ const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const UPSTREAM = process.env.OPENROUTER_BASE || 'https://openrouter.ai/api/v1';
 const PROXY_PREFIX = '/api/openrouter';
 const ALLOWED_PATHS = new Set(['/models', '/images/models', '/videos/models']);
+// Per-model provider endpoints (latency/throughput); id parts limited to safe characters.
+const ENDPOINTS_PATH = /^\/models\/[A-Za-z0-9._~-]+\/[A-Za-z0-9._~:-]+\/endpoints$/;
 const CACHE_MS = 5 * 60 * 1000;
 
 const arg = (name, fallback) => {
@@ -36,9 +38,11 @@ const cache = new Map();
 
 async function proxy(req, res, url) {
   const path = url.pathname.slice(PROXY_PREFIX.length);
-  if (req.method !== 'GET' || !ALLOWED_PATHS.has(path)) {
+  if (req.method !== 'GET' || !(ALLOWED_PATHS.has(path) || ENDPOINTS_PATH.test(path))) {
     res.writeHead(404, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Only GET /models, /images/models and /videos/models are proxied' }));
+    return res.end(
+      JSON.stringify({ error: 'Only GET /models, /images/models, /videos/models and /models/{id}/endpoints are proxied' }),
+    );
   }
   const target = UPSTREAM + path + url.search;
   const auth = req.headers.authorization;
