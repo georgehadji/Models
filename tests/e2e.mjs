@@ -17,8 +17,23 @@ import * as R from '../src/recommend.js';
 
 const OUT = fileURLToPath(new URL('../test-results/', import.meta.url));
 const catalog = makeCatalog();
+// Synthetic per-provider speed: median p50 latency 1,500 ms, median throughput 60 tok/s.
+const endpointsBody = {
+  data: {
+    endpoints: [
+      { provider_name: 'Fast Co', latency_last_30m: { p50: 1200, p90: 2400 }, throughput_last_30m: { p50: 70 } },
+      { provider_name: 'Slow Co', latency_last_30m: { p50: 1800 }, throughput_last_30m: 50 },
+    ],
+  },
+};
 const bodyFor = (path) =>
-  path.startsWith('/videos/models') ? catalog.videos : path.startsWith('/images/models') ? catalog.images : catalog.models;
+  path.endsWith('/endpoints')
+    ? endpointsBody
+    : path.startsWith('/videos/models')
+      ? catalog.videos
+      : path.startsWith('/images/models')
+        ? catalog.images
+        : catalog.models;
 
 function fakeUpstream() {
   const srv = createServer((req, res) => {
@@ -106,6 +121,19 @@ try {
       const efforts = await page.$$eval('#pick-caps tbody select', (s) => s.map((x) => x.value));
       assert.ok(efforts.length > 0 && efforts.every((e) => ['none', 'minimal', 'low', 'medium'].includes(e)), efforts.join(','));
       await page.selectOption('#pick-compare', 'default');
+
+      // Latency/throughput appear once an API key is entered (dummy key; the upstream here is fake).
+      assert.match(await page.textContent('#pick-summary'), /API key/);
+      await page.click('.api-key summary');
+      await page.fill('#api-key', 'test-key');
+      await page.press('#api-key', 'Tab');
+      await page.waitForFunction(() => document.querySelector('#pick-caps tbody td:nth-child(7)')?.textContent === '1.5 s');
+      assert.equal(await page.textContent('#pick-caps tbody tr:first-child td:nth-child(8)'), '60 tok/s');
+      assert.match(await page.textContent('#pick-tiers .tier .why'), /Latency 1\.5 s · throughput 60 tok\/s/);
+      assert.match(await page.getAttribute('#pick-caps tbody td:nth-child(7)', 'title'), /fastest: Fast Co 1\.2 s/);
+      await page.fill('#api-key', '');
+      await page.press('#api-key', 'Tab');
+      await page.click('.api-key summary');
     }
 
     // Hover a bar row → tooltip with the model's prices.

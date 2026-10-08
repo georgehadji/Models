@@ -155,6 +155,42 @@ export function normalizeModel(raw) {
   return model;
 }
 
+/** A 30-minute stat is either a number or percentiles ({ p50, p75, … }); keep the median. */
+const p50 = (v) => toNumber(typeof v === 'object' && v !== null ? v.p50 : v);
+
+const medianOf = (values) => {
+  const v = values.filter((x) => x != null).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const mid = v.length >> 1;
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+};
+
+/**
+ * Per-provider speed from GET /models/{id}/endpoints. OpenRouter only fills
+ * latency_last_30m (ms) and throughput_last_30m (tokens/s) for authenticated
+ * requests. Returns the median across providers and the fastest provider.
+ */
+export function normalizeEndpoints(json) {
+  const endpoints = Array.isArray(json?.data?.endpoints) ? json.data.endpoints : [];
+  const providers = endpoints.map((e) => ({
+    name: e.provider_name || e.tag || 'unknown',
+    tag: e.tag || null,
+    latency: p50(e.latency_last_30m),
+    throughput: p50(e.throughput_last_30m),
+    uptime: toNumber(e.uptime_last_1d),
+  }));
+  const timed = providers.filter((p) => p.latency != null);
+  const fed = providers.filter((p) => p.throughput != null);
+  return {
+    providers,
+    latency: medianOf(timed.map((p) => p.latency)),
+    throughput: medianOf(fed.map((p) => p.throughput)),
+    fastestLatency: timed.length ? timed.reduce((a, b) => (b.latency < a.latency ? b : a)) : null,
+    fastestThroughput: fed.length ? fed.reduce((a, b) => (b.throughput > a.throughput ? b : a)) : null,
+    measuredProviders: new Set([...timed, ...fed]).size,
+  };
+}
+
 export function normalizeVideoModel(raw) {
   const skus = Object.entries(raw.pricing_skus || {})
     .map(([key, value]) => ({ key, price: unitPrice(value) }))

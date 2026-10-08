@@ -7,6 +7,7 @@ import * as R from './recommend.js';
 import * as F from './format.js';
 import { lineChart, scatterChart } from './charts.js';
 import { initPickControls, pickState, update } from './pick-controls.js';
+import { ensureSpeed, speedOf } from './speed.js';
 
 const $ = (sel) => document.querySelector(sel);
 const TIER_COLOR = { best: 'var(--series-1)', value: 'var(--series-3)', budget: 'var(--series-2)' };
@@ -53,6 +54,34 @@ function compute(models) {
 
 // ---------- summary + tier cards ----------
 
+// ---------- speed (latency / throughput) ----------
+
+let lastApiKey = '';
+
+const fmtLatency = (ms) => (ms == null ? '—' : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`);
+const fmtThroughput = (tps) => (tps == null ? '—' : `${Math.round(tps)} tok/s`);
+
+/** { latency, throughput, detail } for display; values are text. */
+function speedText(id) {
+  if (!lastApiKey) return { latency: '—', throughput: '—', detail: 'Add an API key to see latency and throughput' };
+  const s = speedOf(id);
+  if (!s || s.status === 'loading') return { latency: '…', throughput: '…', detail: 'Loading' };
+  if (s.status === 'error') return { latency: '—', throughput: '—', detail: `Could not load: ${s.error}` };
+  const d = s.data;
+  if (!d.measuredProviders) return { latency: '—', throughput: '—', detail: 'No provider measured in the last 30 minutes' };
+  const fastest = d.fastestLatency ? `fastest: ${d.fastestLatency.name} ${fmtLatency(d.fastestLatency.latency)}` : '';
+  return {
+    latency: fmtLatency(d.latency),
+    throughput: fmtThroughput(d.throughput),
+    detail: `Median p50 of ${d.measuredProviders} provider${d.measuredProviders === 1 ? '' : 's'}, last 30 min${fastest ? ` · ${fastest}` : ''}`,
+  };
+}
+
+const speedLine = (id) => {
+  const s = speedText(id);
+  return lastApiKey ? `Latency ${s.latency} · throughput ${s.throughput} (${s.detail})` : null;
+};
+
 function renderSummary(p) {
   const x = p.excluded;
   const parts = [
@@ -64,7 +93,8 @@ function renderSummary(p) {
     x.variant && `${x.variant} :batch, :free or other variants`,
     x.unpriced && `${x.unpriced} without a usable price`,
   ].filter(Boolean);
-  $('#pick-summary').textContent = `${F.int(p.scored.length)} candidate models. Left out: ${parts.join(' · ') || 'none'}.`;
+  const speedHint = lastApiKey ? '' : ' Add your OpenRouter API key (top right) to see latency and throughput.';
+  $('#pick-summary').textContent = `${F.int(p.scored.length)} candidate models. Left out: ${parts.join(' · ') || 'none'}.${speedHint}`;
 }
 
 function reasoningLine(c) {
@@ -95,6 +125,8 @@ function whyLines(t, p) {
     lines.push({ text: `Cheapest of the ${above} models at or above the median ${p.quality.short} (${fmtQ(median)})` }, { text: rank });
   }
   lines.push({ text: `${cost(c.cost)} per 1k tasks at ${c.defaultLevel} (default)` }, { text: capsLine(c.m) }, { text: reasoningLine(c) });
+  const speed = speedLine(c.m.id);
+  if (speed) lines.push({ text: speed });
   if (c.assumed) lines.push({ text: 'No effort list published: low/medium/high assumed', warn: true });
   return lines;
 }
@@ -136,6 +168,7 @@ function fallbackBlock(t, p) {
     el('div', { class: 'name', text: f.m.name }),
     el('div', { class: 'model-id', text: f.m.id }),
     el('div', { class: 'meta', text: `${p.quality.short} ${fmtQ(f.quality)} · ${cost(f.cost)} per 1k tasks at ${f.defaultLevel} · ${f.m.author}` }),
+    lastApiKey ? el('div', { class: 'meta', text: `Latency ${speedText(f.m.id).latency} · ${speedText(f.m.id).throughput}` }) : null,
     t.sameAuthor ? el('div', { class: 'meta', text: '! Same provider: no other provider qualifies.' }) : null,
     el('div', { class: 'snippet' }, [
       el('code', { text: snippet, title: 'OpenRouter request field: tries the pick first, then the fallback' }),
@@ -337,6 +370,8 @@ const CAP_COLUMNS = [
   num('Intelligence', (c) => fmtQ(c.m.bench.intelligence)),
   num('Context', (c) => F.tokens(c.m.contextLength)),
   num('Max output', (c) => F.tokens(c.m.maxOutput)),
+  { label: 'Latency p50', num: true, cell: (c) => el('td', { class: 'num', text: speedText(c.m.id).latency, title: speedText(c.m.id).detail }) },
+  { label: 'Throughput p50', num: true, cell: (c) => el('td', { class: 'num', text: speedText(c.m.id).throughput, title: speedText(c.m.id).detail }) },
   { label: 'Inputs', cell: (c) => el('td', { text: c.m.inputModalities.join(', ') }) },
   { label: 'Tools', cell: (c) => el('td', {}, [yesNo(c.m.caps.tools)]) },
   { label: 'Structured', cell: (c) => el('td', {}, [yesNo(c.m.caps.structured)]) },
@@ -370,9 +405,12 @@ function renderCaps(p) {
 
 let lastModels = [];
 
-export function renderPick(models) {
+/** options.apiKey: needed for latency/throughput, which OpenRouter only returns to authenticated requests. */
+export function renderPick(models, { apiKey = '' } = {}) {
   lastModels = models;
+  lastApiKey = apiKey;
   const p = compute(models);
+  ensureSpeed(p.short.map((c) => c.m.id), apiKey, () => renderPick(lastModels, { apiKey: lastApiKey }));
   renderSummary(p);
   renderTiers(p);
   renderCallout(p);
@@ -383,6 +421,6 @@ export function renderPick(models) {
 }
 
 /** rerender: redraws the whole page, since other cards share the pick section's cost assumptions. */
-export function initPick(rerender = () => renderPick(lastModels)) {
+export function initPick(rerender = () => renderPick(lastModels, { apiKey: lastApiKey })) {
   initPickControls(rerender);
 }

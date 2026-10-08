@@ -106,6 +106,27 @@ test('topBy skips nulls and respects direction', () => {
   assert.deepEqual(D.topBy(ms, (m) => m.v, 5, 'desc').map((m) => m.name), ['a', 'd', 'c']);
 });
 
+test('endpoints: median p50 latency and throughput across providers, fastest named, nulls ignored', () => {
+  const s = D.normalizeEndpoints({
+    data: {
+      endpoints: [
+        { provider_name: 'A', latency_last_30m: { p50: 1500, p90: 4000 }, throughput_last_30m: { p50: 40 } },
+        { provider_name: 'B', latency_last_30m: { p50: 1200 }, throughput_last_30m: 90 },
+        { provider_name: 'C', latency_last_30m: { p50: 3000 }, throughput_last_30m: null },
+        { provider_name: 'D', latency_last_30m: null, throughput_last_30m: null },
+      ],
+    },
+  });
+  assert.equal(s.latency, 1500);
+  assert.equal(s.throughput, 65);
+  assert.equal(s.fastestLatency.name, 'B');
+  assert.equal(s.fastestThroughput.name, 'B');
+  assert.equal(s.measuredProviders, 3);
+  const empty = D.normalizeEndpoints({ data: { endpoints: [{ provider_name: 'X', latency_last_30m: null }] } });
+  assert.deepEqual([empty.latency, empty.throughput, empty.fastestLatency, empty.measuredProviders], [null, null, null, 0]);
+  assert.equal(D.normalizeEndpoints({ data: [] }).providers.length, 0);
+});
+
 test('video models: SKUs parsed and sorted, max duration computed', () => {
   const v = D.normalizeVideoModel({
     id: 'acme/v',

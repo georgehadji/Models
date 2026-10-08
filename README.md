@@ -53,7 +53,13 @@ The first section recommends models for a type of project. Every chart in it nam
    models (nearest supported level when a model lacks it), or at a different effort per model.
 
 Cost per task = input tokens × input price + output tokens × output price + reasoning tokens ×
-reasoning price (the output price when no separate reasoning price is listed).
+reasoning price (the output price when no separate reasoning price is listed). Long-prompt price tiers
+(`pricing.overrides`, e.g. Claude Haiku 5.5 above 100K prompt tokens) apply once the task's prompt reaches them.
+
+**Latency and throughput** (median p50 across providers over the last 30 minutes, with the fastest provider
+named) appear on the tier cards and in the shortlist table once you enter an OpenRouter API key: OpenRouter only
+returns them to authenticated requests. They are fetched per shortlisted model from `/models/{id}/endpoints`.
+OpenRouter routes requests by price by default, so a given request may not hit the fastest provider.
 
 ## What's charted
 

@@ -4,6 +4,7 @@ import * as F from './format.js';
 import { barChart, scatterChart, heatmap, hideTip } from './charts.js';
 import { CARDS } from './cards.js';
 import { initPick, renderPick } from './pick.js';
+import { resetSpeed } from './speed.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -245,7 +246,7 @@ function renderAll() {
   if (!state.catalog) return;
   hideTip();
   const ctx = currentContext();
-  renderPick(ctx.models);
+  renderPick(ctx.models, { apiKey: $('#api-key').value.trim() });
   for (const card of CARDS) renderCard(card, ctx);
   renderExplorer(ctx);
 }
@@ -300,6 +301,7 @@ function showError(err) {
 let inflight;
 async function load() {
   inflight?.abort();
+  resetSpeed(); // latency/throughput are 30-minute figures; a refresh fetches them again
   inflight = new AbortController();
   const main = $('#main');
   main.classList.add('loading');
@@ -334,7 +336,10 @@ function init() {
 
   const keyInput = $('#api-key');
   keyInput.value = readStore('sessionStorage', 'atlas-api-key') || '';
-  keyInput.addEventListener('change', () => writeStore('sessionStorage', 'atlas-api-key', keyInput.value.trim()));
+  keyInput.addEventListener('change', () => {
+    writeStore('sessionStorage', 'atlas-api-key', keyInput.value.trim());
+    renderAll(); // a key unlocks latency and throughput in the pick section
+  });
 
   let debounce;
   $('#filters').addEventListener('input', (e) => {
