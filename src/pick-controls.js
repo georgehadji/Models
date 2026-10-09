@@ -13,7 +13,8 @@ function fromPreset(preset, reasoningTokens = { ...DEFAULT_REASONING_TOKENS }) {
     require: [...preset.require],
     minContext: preset.minContext,
     maxBlended: preset.maxBlended,
-    weights: { ...preset.weights },
+    // Speed starts off: it needs an API key and one request per candidate model.
+    weights: { speed: 0, ...preset.weights },
     task: { ...preset.task },
     reasoningTokens,
     compare: { all: 'default', rows: {} },
@@ -116,7 +117,7 @@ function renderCompareOptions() {
 }
 
 const showWeights = () => {
-  for (const k of ['quality', 'cost', 'context']) $(`#w-${k}`).nextElementSibling.textContent = String(state.weights[k]);
+  for (const k of ['quality', 'cost', 'context', 'speed']) $(`#w-${k}`).nextElementSibling.textContent = String(state.weights[k]);
 };
 
 /** Push the state into the form controls. */
@@ -127,7 +128,7 @@ export function syncForm() {
   for (const box of document.querySelectorAll('input[name="pick-req"]')) box.checked = state.require.includes(box.value);
   $('#pick-ctx').value = String(state.minContext);
   $('#pick-max').value = state.maxBlended == null ? '' : String(state.maxBlended);
-  for (const k of ['quality', 'cost', 'context']) $(`#w-${k}`).value = String(state.weights[k]);
+  for (const k of ['quality', 'cost', 'context', 'speed']) $(`#w-${k}`).value = String(state.weights[k]);
   showWeights();
   $('#task-in').value = String(state.task.input);
   $('#task-out').value = String(state.task.output);
@@ -148,7 +149,12 @@ function readForm() {
     require: [...document.querySelectorAll('input[name="pick-req"]:checked')].map((b) => b.value),
     minContext: Number($('#pick-ctx').value),
     maxBlended: $('#pick-max').value === '' ? null : Number($('#pick-max').value),
-    weights: { quality: Number($('#w-quality').value), cost: Number($('#w-cost').value), context: Number($('#w-context').value) },
+    weights: {
+      quality: Number($('#w-quality').value),
+      cost: Number($('#w-cost').value),
+      context: Number($('#w-context').value),
+      speed: Number($('#w-speed').value),
+    },
     task: { input: nonNegative($('#task-in').value, state.task.input), output: nonNegative($('#task-out').value, state.task.output) },
     reasoningTokens: { ...state.reasoningTokens, ...Object.fromEntries(tokens) },
   });

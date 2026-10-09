@@ -78,6 +78,31 @@ test('costPer1k switches to the long-prompt price tier once a prompt reaches min
   assert.equal(R.costPer1k(m, 'none', { ...A, input: 100000 }), 51.25);
 });
 
+test('secondsPerTask = latency + (output + reasoning tokens at the effort) / throughput', () => {
+  const speed = { latency: 1500, throughput: 50 };
+  // 1.5 s + 500 / 50 = 11.5 s at none; high adds 8000 reasoning tokens: 1.5 + 8500 / 50 = 171.5 s
+  assert.equal(R.secondsPerTask(speed, 'none', A), 11.5);
+  assert.equal(R.secondsPerTask(speed, 'high', A), 171.5);
+  assert.equal(R.secondsPerTask({ latency: 1500, throughput: null }, 'none', A), null);
+  assert.equal(R.secondsPerTask(null, 'none', A), null);
+});
+
+test('speed weight favours the faster of two otherwise identical models; unmeasured models score neutral', () => {
+  const base = { quality: 70, cost: 10, levels: ['none'], defaultLevel: 'none' };
+  const list = [
+    { ...base, m: model({ id: 'a/slow' }), seconds: 40 },
+    { ...base, m: model({ id: 'b/fast' }), seconds: 4 },
+    { ...base, m: model({ id: 'c/unknown' }), seconds: null },
+  ];
+  const scored = Object.fromEntries(R.score(list, { quality: 0, cost: 0, context: 0, speed: 100 }).map((c) => [c.m.id, c.score]));
+  assert.equal(scored['b/fast'], 1);
+  assert.equal(scored['a/slow'], 0);
+  assert.equal(scored['c/unknown'], 0.5);
+  // Without a speed weight, seconds are ignored entirely.
+  const flat = R.score(list, { quality: 50, cost: 50, context: 0 }).map((c) => c.score);
+  assert.ok(flat.every((s) => s === flat[0]));
+});
+
 test('candidates exclude variants, free models, unmet requirements and unscored models, and count each', () => {
   const models = [
     model({ id: 'a/ok', coding: 70 }),

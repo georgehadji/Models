@@ -41,7 +41,10 @@ function compute(models) {
   const assumptions = { input: s.task.input, output: s.task.output, reasoningTokens: s.reasoningTokens };
   const req = { quality: preset.quality, require: s.require, minContext: s.minContext, maxBlended: s.maxBlended, allowBatch: preset.allowBatch };
   const { list, excluded } = R.candidates(models, req, assumptions);
-  const scored = R.score(list, s.weights);
+  // Speed counts only with a key (OpenRouter withholds it otherwise); unmeasured models score neutral.
+  const useSpeed = s.weights.speed > 0 && !!lastApiKey;
+  const timed = list.map((c) => ({ ...c, seconds: R.secondsPerTask(measured(c.m.id), c.defaultLevel, assumptions) }));
+  const scored = R.score(timed, useSpeed ? s.weights : { ...s.weights, speed: 0 });
   const tiers = scored.length ? R.rankTiers(scored) : [];
   const short = R.shortlist(scored, tiers, SHORTLIST_SIZE);
   const roles = new Map();
@@ -49,7 +52,7 @@ function compute(models) {
     if (t.pick) roles.set(t.pick.m.id, { tier: t.key, kind: 'pick', label: `${t.label} pick` });
     if (t.fallback) roles.set(t.fallback.m.id, { tier: t.key, kind: 'fallback', label: `${t.label} fallback` });
   }
-  return { s, preset, quality, assumptions, scored, tiers, short, roles, excluded };
+  return { s, preset, quality, assumptions, scored, tiers, short, roles, excluded, useSpeed };
 }
 
 // ---------- summary + tier cards ----------
@@ -77,10 +80,30 @@ function speedText(id) {
   };
 }
 
+/** { latency, throughput } once measured, else null. */
+function measured(id) {
+  const s = speedOf(id);
+  return s?.status === 'ok' ? s.data : null;
+}
+
+const fmtSeconds = (sec) => (sec == null ? '—' : sec >= 100 ? `${Math.round(sec)} s` : `${sec.toFixed(1)} s`);
+
 const speedLine = (id) => {
   const s = speedText(id);
   return lastApiKey ? `Latency ${s.latency} · throughput ${s.throughput} (${s.detail})` : null;
 };
+
+function speedSummary(p) {
+  if (!lastApiKey) {
+    return p.s.weights.speed > 0
+      ? ' The Speed weight is ignored until you add your OpenRouter API key (top right).'
+      : ' Add your OpenRouter API key (top right) to see latency and throughput.';
+  }
+  if (!p.useSpeed) return '';
+  const timed = p.scored.filter((c) => c.seconds != null).length;
+  const loading = p.scored.filter((c) => speedOf(c.m.id)?.status === 'loading').length;
+  return ` Speed: measured for ${timed} of ${p.scored.length} candidates${loading ? ` (${loading} still loading)` : ''}; the rest count as average speed.`;
+}
 
 function renderSummary(p) {
   const x = p.excluded;
@@ -93,7 +116,7 @@ function renderSummary(p) {
     x.variant && `${x.variant} :batch, :free or other variants`,
     x.unpriced && `${x.unpriced} without a usable price`,
   ].filter(Boolean);
-  const speedHint = lastApiKey ? '' : ' Add your OpenRouter API key (top right) to see latency and throughput.';
+  const speedHint = speedSummary(p);
   $('#pick-summary').textContent = `${F.int(p.scored.length)} candidate models. Left out: ${parts.join(' · ') || 'none'}.${speedHint}`;
 }
 
@@ -127,6 +150,7 @@ function whyLines(t, p) {
   lines.push({ text: `${cost(c.cost)} per 1k tasks at ${c.defaultLevel} (default)` }, { text: capsLine(c.m) }, { text: reasoningLine(c) });
   const speed = speedLine(c.m.id);
   if (speed) lines.push({ text: speed });
+  if (c.seconds != null) lines.push({ text: `About ${fmtSeconds(c.seconds)} per task at ${c.defaultLevel} (estimate)` });
   if (c.assumed) lines.push({ text: 'No effort list published: low/medium/high assumed', warn: true });
   return lines;
 }
@@ -372,6 +396,16 @@ const CAP_COLUMNS = [
   num('Max output', (c) => F.tokens(c.m.maxOutput)),
   { label: 'Latency p50', num: true, cell: (c) => el('td', { class: 'num', text: speedText(c.m.id).latency, title: speedText(c.m.id).detail }) },
   { label: 'Throughput p50', num: true, cell: (c) => el('td', { class: 'num', text: speedText(c.m.id).throughput, title: speedText(c.m.id).detail }) },
+  {
+    label: 'Time / task',
+    num: true,
+    cell: (c, row) =>
+      el('td', {
+        class: 'num',
+        text: fmtSeconds(R.secondsPerTask(measured(c.m.id), row.level, row.assumptions)),
+        title: 'Estimated: latency + (output + reasoning tokens at this effort) / throughput',
+      }),
+  },
   { label: 'Inputs', cell: (c) => el('td', { text: c.m.inputModalities.join(', ') }) },
   { label: 'Tools', cell: (c) => el('td', {}, [yesNo(c.m.caps.tools)]) },
   { label: 'Structured', cell: (c) => el('td', {}, [yesNo(c.m.caps.structured)]) },
@@ -410,7 +444,9 @@ export function renderPick(models, { apiKey = '' } = {}) {
   lastModels = models;
   lastApiKey = apiKey;
   const p = compute(models);
-  ensureSpeed(p.short.map((c) => c.m.id), apiKey, () => renderPick(lastModels, { apiKey: lastApiKey }));
+  // With a speed weight every candidate needs measurements; otherwise only the shortlist is shown.
+  const ids = (p.useSpeed ? p.scored : p.short).map((c) => c.m.id);
+  ensureSpeed(ids, apiKey, () => renderPick(lastModels, { apiKey: lastApiKey }));
   renderSummary(p);
   renderTiers(p);
   renderCallout(p);

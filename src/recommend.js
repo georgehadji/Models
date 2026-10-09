@@ -250,16 +250,46 @@ const normalizer = (values, log) => {
   return (x) => (span > 0 ? ((log ? Math.log(x) : x) - lo) / span : 1);
 };
 
-/** Weighted 0..1 score: quality up, cost down (log), context up (log). Returns new objects. */
+/**
+ * Estimated seconds per task: time to first token plus generating the visible
+ * output and the effort's reasoning tokens at the measured throughput.
+ * speed: { latency (ms), throughput (tokens/s) }; null if either is unknown.
+ */
+export function secondsPerTask(speed, effort, assumptions) {
+  if (!(speed?.latency >= 0) || !(speed?.throughput > 0)) return null;
+  const reasoningTokens = effort === 'none' ? 0 : assumptions.reasoningTokens[effort] ?? 0;
+  return speed.latency / 1000 + (assumptions.output + reasoningTokens) / speed.throughput;
+}
+
+/** 0..1, faster = higher (log scale); unmeasured or all-equal models get a neutral 0.5. */
+function speedScorer(list) {
+  const known = list.map((c) => c.seconds).filter((s) => s > 0);
+  if (known.length < 2) return () => 0.5;
+  const t = normalizer(known, true);
+  const spread = Math.max(...known) > Math.min(...known);
+  return (s) => (s > 0 && spread ? 1 - t(s) : 0.5);
+}
+
+/**
+ * Weighted 0..1 score: quality up, cost down (log), context up (log) and,
+ * with a speed weight, seconds per task down (log). Returns new objects.
+ */
 export function score(list, weights) {
   if (!list.length) return [];
   const q = normalizer(list.map((c) => c.quality), false);
   const cost = normalizer(list.map((c) => c.cost), true);
   const ctx = normalizer(list.map((c) => c.m.contextLength || 1), true);
-  const total = weights.quality + weights.cost + weights.context || 1;
+  const speedW = weights.speed || 0;
+  const fast = speedScorer(list);
+  const total = weights.quality + weights.cost + weights.context + speedW || 1;
   return list.map((c) => ({
     ...c,
-    score: (weights.quality * q(c.quality) + weights.cost * (1 - cost(c.cost)) + weights.context * ctx(c.m.contextLength || 1)) / total,
+    score:
+      (weights.quality * q(c.quality) +
+        weights.cost * (1 - cost(c.cost)) +
+        weights.context * ctx(c.m.contextLength || 1) +
+        speedW * fast(c.seconds)) /
+      total,
   }));
 }
 

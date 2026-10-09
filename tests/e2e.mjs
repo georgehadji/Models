@@ -131,6 +131,12 @@ try {
       assert.equal(await page.textContent('#pick-caps tbody tr:first-child td:nth-child(8)'), '60 tok/s');
       assert.match(await page.textContent('#pick-tiers .tier .why'), /Latency 1\.5 s · throughput 60 tok\/s/);
       assert.match(await page.getAttribute('#pick-caps tbody td:nth-child(7)', 'title'), /fastest: Fast Co 1\.2 s/);
+
+      // Speed weight: every candidate gets measured; time per task = 1.5 s + output tokens / 60 tok/s.
+      await page.fill('#w-speed', '50');
+      await page.waitForFunction(() => /Speed: measured for (\d+) of \1 candidates;/.test(document.querySelector('#pick-summary').textContent));
+      assert.match(await page.textContent('#pick-caps tbody tr:first-child td:nth-child(9)'), /^\d+(\.\d)? s$/);
+      await page.fill('#w-speed', '0');
       await page.fill('#api-key', '');
       await page.press('#api-key', 'Tab');
       await page.click('.api-key summary');
